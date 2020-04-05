@@ -25,6 +25,28 @@ struct MemoryResult {
    HitWhere::where_t hit_where;
    subsecond_time_t latency;
 };
+typedef struct radixnode{
+	struct radixnode *pa[512];
+	bool valid[512];
+}NODE;
+extern NODE *root;
+extern int memacc;
+#define sizeme 32
+extern uint32_t L3tlb[sizeme][3];
+extern NODE* L3tlbe[sizeme];
+extern uint32_t L2tlb[sizeme][3];
+extern NODE* L2tlbe[sizeme];
+extern uint32_t L1tlb[sizeme][3];
+extern NODE* L1tlbe[sizeme];
+
+extern unsigned long long int l1access ;
+extern unsigned long long int l2access ;
+extern unsigned long long int l3access ;
+extern unsigned long long int l1miss ;
+extern unsigned long long int l2miss ;
+extern unsigned long long int l3miss ;
+extern unsigned long long int pw;
+
 
 MemoryResult makeMemoryResult(HitWhere::where_t _hit_where, SubsecondTime _latency);
 void applicationMemCopy(void *dest, const void *src, size_t n);
