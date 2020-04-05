@@ -18,7 +18,7 @@
 #include "cheetah_manager.h"
 
 #include <cstring>
-
+#include<malloc.h>
 #if 0
    extern Lock iolock;
 #  define MYLOG(...) { ScopedLock l(iolock); fflush(stderr); fprintf(stderr, "[%8lu] %dcor %-25s@%03u: ", getPerformanceModel()->getCycleCount(ShmemPerfModel::_USER_THREAD), m_core_id, __FUNCTION__, __LINE__); fprintf(stderr, __VA_ARGS__); fprintf(stderr, "\n"); fflush(stderr); }
@@ -27,6 +27,28 @@
 #endif
 
 #define VERBOSE 0
+
+NODE *root = (NODE*)malloc(sizeof(NODE));
+int memacc = 0;
+uint32_t L3tlb[sizeme][3];
+NODE* L3tlbe[sizeme];
+uint32_t L2tlb[sizeme][3];
+NODE* L2tlbe[sizeme];
+uint32_t L1tlb[sizeme][3];
+NODE* L1tlbe[sizeme];
+
+unsigned long long int l1access = 0;
+unsigned long long int l2access = 0;
+unsigned long long int l3access = 0;
+unsigned long long int l1miss = 0;
+unsigned long long int l2miss = 0;
+unsigned long long int l3miss = 0;
+unsigned long long int pw=0;
+
+
+
+
+
 
 const char * ModeledString(Core::MemModeled modeled) {
    switch(modeled)
@@ -102,6 +124,19 @@ Core::Core(SInt32 id)
          this, m_network, m_shmem_perf_model);
 
    m_performance_model = PerformanceModel::create(this);
+   
+   /*
+   
+L1tlb[][3]={{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+L2tlb[][3]={{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+L3tlb[][3]={{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0},{0,0,0}};
+
+L1tlbe[] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+L2tlbe[] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+L3tlbe[] = {NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL,NULL};
+*/
+   
+   
 }
 
 Core::~Core()
