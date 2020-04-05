@@ -12,8 +12,530 @@
 #include "config.hpp"
 #include "distribution.h"
 #include "topology_info.h"
-
+#include "core.h"
+#include <malloc.h>
 #include <algorithm>
+#include "../../../misc/subsecond_time.h"
+#include "../../../misc/fixed_types.h"
+#include "../../../performance_model/shmem_perf_model.h"
+#include "../memory_manager_base.h"
+//extern NODE* root;
+struct ret
+{
+	int pf=0,ma=0;
+};
+void allocate(NODE* toaddr,NODE *addr,int i){
+	toaddr->pa[i]=addr;
+	toaddr->valid[i]=true;
+}
+void initializeNode(NODE *addr){
+	for(int i=0;i<512;i++){
+		addr->pa[i]=NULL;
+		addr->valid[i]=false;
+	}
+}
+bool pagefault(IntPtr address,int level,NODE *physadd)
+{      // std::cout<<0;
+	//SubsecondTime lat;
+	//SubsecondTime latency = lat.NS(100);
+	//getShmemPerfModel()->incrElapsedTime(latency,ShmemPerfModel::_USER_THREAD);
+	//page copied to RAM
+	int v1= address>>39;
+	int v2= (address>>30)%512;
+	int v3= (address>>21)%512;
+	int v4= (address>>12)%512;
+	NODE *pa3,*pa2,*pa1;
+	if(level==4)
+	{
+			physadd->valid[v4] = true;
+    }
+	if(level<4){
+		pa3 = (NODE*)malloc(sizeof(NODE));
+		initializeNode(pa3);
+		pa3->valid[v4] = true;
+		if(level<3){
+			pa2 = (NODE*)malloc(sizeof(NODE));
+			initializeNode(pa2);
+			allocate(pa2,pa3,v3);
+			if(level<2){
+				pa1 = (NODE*)malloc(sizeof(NODE));
+				initializeNode(pa1);
+				allocate(pa1,pa2,v2);
+			}
+		}
+	}
+				
+	if(level==3)allocate(physadd,pa3,v3);
+	
+	if(level==2)allocate(physadd,pa2,v2);
+
+	if(level==1)allocate(physadd,pa1,v1);
+	
+	return false;		
+	
+}
+struct ret pagewalk(IntPtr address)
+{
+	struct ret re;
+	re.pf=0;
+	re.ma=0;
+	int v1= address>>39;
+	int v2= (address>>30)%512;
+	int v3= (address>>21)%512;
+	int v4= (address>>12)%512;
+	re.ma=4;
+	
+	if (root->valid[v1]==false)
+	{
+		 pagefault(address,1,root);
+		 re.pf++;
+	}
+	else
+	{
+		NODE* pa1=root->pa[v1];
+		if (pa1->valid[v2]==false)
+		{
+			pagefault(address,2,pa1);
+			re.pf++;
+		}
+		else
+		{
+			NODE* pa2=pa1->pa[v2];
+			if (pa2->valid[v3]==false)
+			{
+				pagefault(address,3,pa2);
+				re.pf++;
+			}
+			else
+			{
+				NODE* pa3=pa2->pa[v3];
+				if (pa3->valid[v4]==false)
+				{
+					pagefault(address,4,pa3);
+					re.pf++;
+				}
+				else
+					{       //std::cout<<1;
+					}	
+			}
+		}	
+	}	
+	return  re;
+}
+
+
+
+
+
+
+
+
+NODE *pagefault1(IntPtr address,int level,NODE *physadd)
+{
+	//page copied to RAM
+	//cout<<"\npagefault "<<address<<" "<<level;
+	int v1= address>>39;
+	int v2= (address>>30)%512;
+	int v3= (address>>21)%512;
+	int v4= (address>>12)%512;
+	NODE *pa3,*pa2,*pa1;
+	if(level==4)
+	{
+			physadd->valid[v4] = true;
+    }
+	if(level<4){
+		pa3 = (NODE*)malloc(sizeof(NODE));
+		initializeNode(pa3);
+		pa3->valid[v4] = true;
+		if(level<3){
+			pa2 = (NODE*)malloc(sizeof(NODE));
+			initializeNode(pa2);
+			allocate(pa2,pa3,v3);
+			if(level<2){
+				pa1 = (NODE*)malloc(sizeof(NODE));
+				initializeNode(pa1);
+				allocate(pa1,pa2,v2);
+			}
+		}
+	}
+				
+	if(level==3)
+	{
+		allocate(physadd,pa3,v3);
+		return pa3;
+	}
+	
+	if(level==2)
+	{
+		allocate(physadd,pa2,v2);
+		return pa2;
+	}
+
+	if(level==1)
+	{
+		allocate(physadd,pa1,v1);
+		return pa1;
+	}
+	
+	return NULL;		
+	
+}
+
+
+NODE *checkl2(IntPtr address)
+{
+	l2access++;
+	//cout<<"\ncheckingl2 "<<address;
+	uint32_t tag = (address>>30)%(512*512);
+	for(int i=0;i<sizeme;i++)
+	{
+		if(tag == L2tlb[i][0])
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L2tlb[j][2]>L2tlb[i][2])
+				{
+					L2tlb[j][2]-=1;
+				}
+			}
+			L2tlb[i][2] = sizeme;
+			return L2tlbe[i];
+		}
+	}
+	l2miss++;
+	return NULL;
+}
+NODE *checkl3(IntPtr address)
+{
+	l3access++;
+	//cout<<"\ncheckingl3 "<<address;
+	uint32_t tag = (address>>21)%(512*512*512);
+	for(int i=0;i<sizeme;i++)
+	{
+		if(tag == L3tlb[i][0])
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L3tlb[j][2]>L3tlb[i][2])
+				{
+					L3tlb[j][2]-=1;
+				}
+			}
+			L3tlb[i][2] = sizeme;
+			return L3tlbe[i];
+		}
+	}
+	l3miss++;
+	return NULL;
+}
+NODE *checkl1(IntPtr address)
+{
+	l1access++;
+	//cout<<"\ncheckingl1 "<<address;
+	uint32_t tag = (address>>39)%(512);
+	for(int i=0;i<sizeme;i++)
+	{
+		if(tag == L1tlb[i][0])		{
+			
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L1tlb[j][2]>L1tlb[i][2])
+				{
+					L1tlb[j][2]-=1;
+				}
+			}
+			L1tlb[i][2] = sizeme;
+			//cout<<"l1complete";
+			return L1tlbe[i];
+		}
+	}
+	l1miss++;
+	return NULL;
+}
+
+
+
+
+int replace1(NODE *pa1,IntPtr address)
+{
+	//cout<<"\nreplacing1\n";
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L1tlb[i][2]==0)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L1tlb[j][2]!=0)
+					L1tlb[j][2]--;
+			}
+			L1tlb[i][2] = sizeme;
+			L1tlbe[i] = pa1;
+			L1tlb[i][0] = (address>>39)%(512);
+			return 1;
+		}		
+	}
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L1tlb[i][2]==1)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L1tlb[j][2]>1)
+				{
+					L1tlb[j][2]-=1;
+				}
+			}
+			L1tlb[i][2] = sizeme;
+			L1tlbe[i] = pa1;
+			L1tlb[i][0] = (address>>39)%(512);
+			return 1;
+		}
+	}
+}
+int replace2(NODE *pa2,IntPtr address)
+{
+	//cout<<"\nreplacing2\n";
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L2tlb[i][2]==0)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L2tlb[j][2]!=0)
+					L2tlb[j][2]--;
+			}
+			L2tlb[i][2] = sizeme;
+			L2tlbe[i] = pa2;
+			L2tlb[i][0] = (address>>30)%(512*512);
+			return 1;
+		}		
+	}
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L2tlb[i][2]==1)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L2tlb[j][2]>1)
+				{
+					L2tlb[j][2]-=1;
+				}
+			}
+			L2tlb[i][2] = sizeme;
+			L2tlbe[i] = pa2;
+			L2tlb[i][0] = (address>>30)%(512*512);
+			return 1;
+		}
+	}
+}
+int replace3(NODE *pa3,IntPtr address)
+{
+	//cout<<"\nreplacing3\n"<<address;
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L3tlb[i][2]==0)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L3tlb[j][2]!=0)
+					L3tlb[j][2]--;
+			}
+			L3tlb[i][2] = sizeme;
+			L3tlbe[i] = pa3;
+			//cout<<"\n"<<address;
+			L3tlb[i][0] = (address/4096);
+			//cout<<"\n"<<L3tlb[i][0];
+			L3tlb[i][0] = L3tlb[i][0]/(512);
+			//cout<<"\n"<<L3tlb[i][0];
+			return 1;
+		}		
+	}
+	for(int i=0;i<sizeme;i++)
+	{
+		if(L3tlb[i][2]==1)
+		{
+			for(int j=0;j<sizeme;j++)
+			{
+				if(L3tlb[j][2]>1)
+				{
+					L3tlb[j][2]-=1;
+				}
+			}
+			L3tlb[i][2] = sizeme;
+			L3tlbe[i] = pa3;
+			L3tlb[i][0] = (address>>21)%(512*512*512);
+			return 1;
+		}
+	}
+}
+
+
+
+struct ret pagewalknew(IntPtr address)
+{
+	pw++;//Number of pagewalks
+	//cout<<"pagewalking"<<address;
+	int v1= address>>39;
+	int v2= (address>>30)%512;
+	int v3= (address>>21)%512;
+	int v4= (address>>12)%512;
+	NODE *l3,*l2,*l1;
+	struct ret re;
+	re.ma=0;
+	re.pf=0;
+	//incrElapsedTime
+	re.ma++;
+	l3 = checkl3(address);
+	if (l3 == NULL)
+	{
+		//incrElapsedTime
+		re.ma++;
+		l2 = checkl2(address);
+		if (l2 == NULL)
+		{
+			//incrElapsedTime
+			re.ma++;
+			l1 = checkl1(address);
+			if (l1 == NULL)
+			{
+				//incrElapsedTime
+				re.ma++;
+				if (root->valid[v1]==false)
+				{
+					//cout<<"\n1";
+					NODE* pa1 = pagefault1(address,1,root);
+					re.pf=1;
+					replace1(pa1,address);
+					NODE* pa2=pa1->pa[v2];
+					replace2(pa2,address);
+					NODE* pa3=pa2->pa[v3];
+					replace3(pa3,address);
+				}
+				else
+				{
+					NODE* pa1=root->pa[v1];
+					replace1(pa1,address);
+					if (pa1->valid[v2]==false)
+					{
+						NODE* pa2 = pagefault1(address,2,pa1);
+						re.pf=1;
+						replace2(pa2,address);
+						NODE* pa3=pa2->pa[v3];
+						replace3(pa3,address);
+					}
+					else
+					{
+						NODE* pa2=pa1->pa[v2];
+						replace2(pa2,address);
+						if (pa2->valid[v3]==false)
+						{
+							NODE* pa3 = pagefault1(address,3,pa2);
+							re.pf=1;
+							replace3(pa3,address);
+						}
+						else
+						{
+							NODE* pa3=pa2->pa[v3];
+							replace3(pa3,address);
+							if (pa3->valid[v4]==false)
+								{
+									pagefault1(address,4,pa3);
+									re.pf=1;
+								}
+							else
+								{
+									int i=0;
+								}	
+						}
+					}	
+				}
+			}
+			else
+			{
+				NODE* pa1 = l1;
+				if (pa1->valid[v2]==false)
+				{
+					NODE* pa2 = pagefault1(address,2,pa1);
+					re.pf=1;
+					replace2(pa2,address);
+					NODE* pa3=pa2->pa[v3];
+					replace3(pa3,address);
+				}
+				else
+				{
+					NODE* pa2=pa1->pa[v2];
+					replace2(pa2,address);
+					if (pa2->valid[v3]==false)
+					{
+						NODE *pa3 = pagefault1(address,3,pa2);
+						re.pf=1;
+						replace3(pa3,address);
+					}
+					else
+					{
+						NODE* pa3=pa2->pa[v3];
+						replace3(pa3,address);
+						if (pa3->valid[v4]==false)
+						{
+							pagefault1(address,4,pa3);
+							re.pf=1;
+						}
+						else
+							{
+								int i=0;
+							}	
+					}
+				}	
+			}	
+		}
+		else
+		{
+			NODE* pa2=l2;
+			if (pa2->valid[v3]==false)
+			{
+				NODE* pa3 = pagefault1(address,3,pa2);
+				re.pf=1;
+				replace3(pa3,address);
+			}
+			else
+			{
+				NODE* pa3=pa2->pa[v3];
+				replace3(pa3,address);
+				if (pa3->valid[v4]==false)
+					{
+						pagefault1(address,4,pa3);
+						re.pf=1;
+					}
+				else
+					{
+						int i=0;
+					}	
+			}
+			
+		}
+	}
+	else
+	{
+			NODE *pa3 = l3;
+			if (pa3->valid[v4]==false)
+			{
+				pagefault1(address,4,pa3);
+				re.pf=1;
+			}
+			else
+				{
+					int i=0;
+				}	
+		
+	}
+	return re;
+}
+
+
+
+
+
+
 
 #if 0
    extern Lock iolock;
@@ -594,16 +1116,35 @@ MemoryManager::accessTLB(TLB * tlb, IntPtr address, bool isIfetch, Core::MemMode
        && !(modeled == Core::MEM_MODELED_NONE || modeled == Core::MEM_MODELED_COUNT)
        && m_tlb_miss_penalty.getLatency() != SubsecondTime::Zero()
    )
-   {
+   {   
+	   struct ret re = pagewalknew(address);//4 * mem acc
+	   SubsecondTime lat;
+	   SubsecondTime latency = lat.NS(100);
+	   SubsecondTime latencyp = lat.MS(1);
+	   incrElapsedTime(latency,ShmemPerfModel::_USER_THREAD);
+	   for(int i =1;i<=re.ma;i++)
+	   	   incrElapsedTime(latency,ShmemPerfModel::_USER_THREAD);
+		//incrElapsedTime(m_tlb_miss_penalty.getLatency(), ShmemPerfModel::_USER_THREAD);
+	   for(int i =1;i<=re.pf;i++)
+				   incrElapsedTime(latencyp,ShmemPerfModel::_USER_THREAD);
+	    memacc+=re.ma;
+	    std::cout<<"\nmemaccess"<<memacc;
+	    std::cout<<"\npgwalks"<<pw;
+	    std::cout<<"\nl1access"<<l1access<<"\tl1miss"<<l1miss;
+	    std::cout<<"\nl2access"<<l2access<<"\tl2miss"<<l2miss;
+	    std::cout<<"\nl3access"<<l3access<<"\tl3miss"<<l3miss;
+		//incrElapsedTime(m_tlb_miss_penalty.getLatency(), ShmemPerfModel::_USER_THREAD);
+	   	   //std::cout << getCore()->getId() << std::endl;
+	   	   /*
       if (m_tlb_miss_parallel)
-      {
+      {   
          incrElapsedTime(m_tlb_miss_penalty.getLatency(), ShmemPerfModel::_USER_THREAD);
       }
       else
       {
          PseudoInstruction *i = new TLBMissInstruction(m_tlb_miss_penalty.getLatency(), isIfetch);
          getCore()->getPerformanceModel()->queuePseudoInstruction(i);
-      }
+      }*/
    }
 }
 
